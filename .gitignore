@@ -554,6 +554,14 @@ FodyWeavers.xsd
 .idea/
 *.sln.iml
 
+/build
+
+Vulkan-Renderer
+
+.vscode/
+
+.DS_Store
+
 ### VisualStudio Patch ###
 # Additional files built by Visual Studio
 
