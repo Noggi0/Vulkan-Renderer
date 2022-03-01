@@ -9,6 +9,8 @@
 #include <GLFW/glfw3.h>
 #include <vector>
 #include <optional>
+#include <set>
+#include <string>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -32,12 +34,20 @@ class DrawTriangle {
             this->cleanup();
         };
     private:
+        const std::vector<const char*> deviceExtensions = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        };
         struct QueueFamilyIndices {
             std::optional<uint32_t> graphicsFamily;
 
             bool isComplete() {
                 return graphicsFamily.has_value();
             }
+        };
+        struct SwapChainSupportDetails {
+            VkSurfaceCapabilitiesKHR capabilities;
+            std::vector<VkSurfaceFormatKHR> formats;
+            std::vector<VkPresentModeKHR> presentModes;
         };
 
         void initWindow() {
@@ -121,7 +131,35 @@ class DrawTriangle {
         bool isDeviceSuitable(VkPhysicalDevice device) {
             QueueFamilyIndices indices = this->findQueueFamilies(device);
 
+            bool extensionsSupported = checkDeviceExtensionSupport(device);
+
             return indices.isComplete();
+        };
+
+        bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
+            std::cout << "Checking device extensions" << std::endl;
+
+            uint32_t extensionCount;
+            vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+            std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+            vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+            std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+
+            for (const auto& extension : availableExtensions) {
+                requiredExtensions.erase(extension.extensionName);
+            }
+
+            return requiredExtensions.empty();
+        };
+
+        SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
+            SwapChainSupportDetails details;
+
+            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, this->surface, &details.capabilities);
+
+            return details;
         };
 
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
@@ -207,7 +245,8 @@ class DrawTriangle {
             createInfo.pQueueCreateInfos = &queueCreateInfo;
             createInfo.queueCreateInfoCount = 1;
             createInfo.pEnabledFeatures = &deviceFeatures;
-            createInfo.enabledExtensionCount = 0;
+            createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+            createInfo.ppEnabledExtensionNames = deviceExtensions.data();
             if (enableValidationLayers) {
                 createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
                 createInfo.ppEnabledLayerNames = validationLayers.data();
@@ -233,6 +272,7 @@ class DrawTriangle {
         VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
         VkDevice device = VK_NULL_HANDLE;
         VkQueue graphicsQueue;
+        VkSurfaceKHR surface;
 };
 
 #endif //RENDERER_DRAWTRIANGLE_HPP
