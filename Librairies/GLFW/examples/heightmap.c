@@ -106,7 +106,7 @@ static GLfloat modelview_matrix[16] = {
 static GLfloat map_vertices[3][MAP_NUM_TOTAL_VERTICES];
 static GLuint  map_line_indices[2*MAP_NUM_LINES];
 
-/* Store uniform location for the shaders
+/* Store uniform location for the Shaders
  * Those values are setup as part of the process of creating
  * the shader program. They should not be used before creating
  * the program.
