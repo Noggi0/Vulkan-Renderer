@@ -8,6 +8,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #ifdef WIN32
+    #define NOMINMAX
     #define GLFW_EXPOSE_NATIVE_WIN32
 #elif __APPLE__
     #define GLFW_EXPOSE_NATIVE_COCOA
@@ -19,3 +20,7 @@
 #include <vector>
 #include <optional>
 #include <set>
+#include <cstdint>
+#include <limits>
+#include <algorithm>
+#include <string>
