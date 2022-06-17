@@ -1,10 +1,6 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
-
-#include <iostream>
-#include <stdexcept>
+#include <glm/glm.hpp>
 
 #define GLFW_INCLUDE_VULKAN
 #ifdef WIN32
@@ -24,3 +20,6 @@
 #include <limits>
 #include <algorithm>
 #include <string>
+#include <iostream>
+#include <stdexcept>
+#include <array>

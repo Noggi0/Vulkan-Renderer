@@ -8,9 +8,9 @@
 #include "includes.hpp"
 #include <fstream>
 
-const uint32_t WIDTH = 800;
-const uint32_t HEIGHT = 600;
-const int MAX_FRAMES_IN_FLIGHT = 2;
+constexpr uint32_t WIDTH = 800;
+constexpr uint32_t HEIGHT = 600;
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -25,6 +25,45 @@ const std::vector<const char*> deviceExtensions = {
 #else
     const bool enableValidationLayers = true;
 #endif
+
+struct Vertex {
+    glm::vec2 position;
+    glm::vec3 color;
+
+    static VkVertexInputBindingDescription getBindingDescription() {
+        VkVertexInputBindingDescription bindingDescription{};
+        bindingDescription.binding = 0;
+        bindingDescription.stride = sizeof(Vertex);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        return bindingDescription;
+    };
+
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+        attributeDescriptions[0].binding = 0;
+        attributeDescriptions[0].location = 0;
+        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions[0].offset = offsetof(Vertex, position);
+
+        attributeDescriptions[1].binding = 0;
+        attributeDescriptions[1].location = 1;
+        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+        return attributeDescriptions;
+    };
+};
+
+const std::vector<Vertex> vertices {
+        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, -0.5f}, {1.0f, 0.5f, 0.0f}},
+        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+
+        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+};
 
 class DrawTriangle {
     public:
@@ -76,6 +115,7 @@ class DrawTriangle {
                 this->createGraphicsPipeline();
                 this->createFramebuffers();
                 this->createCommandPool();
+                this->createVertexBuffer();
                 this->createCommandBuffer();
                 this->createSyncObjects();
             };
@@ -490,12 +530,15 @@ class DrawTriangle {
 
             VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
+            auto bindingDescription = Vertex::getBindingDescription();
+            auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
             VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
             vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-            vertexInputInfo.vertexBindingDescriptionCount = 0;
-            vertexInputInfo.pVertexBindingDescriptions = nullptr; // Optional
-            vertexInputInfo.vertexAttributeDescriptionCount = 0;
-            vertexInputInfo.pVertexAttributeDescriptions = nullptr; // Optional
+            vertexInputInfo.vertexBindingDescriptionCount = 1;
+            vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+            vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+            vertexInputInfo.pVertexAttributeDescriptions = &attributeDescriptions[0];
 
             VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
             inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -672,6 +715,48 @@ class DrawTriangle {
             std::cout << "command pool created!" << std::endl;
         };
 
+        void createVertexBuffer() {
+            VkBufferCreateInfo bufferInfo {};
+            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+            bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            if (vkCreateBuffer(this->device, &bufferInfo, nullptr, &this->vertexBuffer) != VK_SUCCESS)
+                throw std::runtime_error("failed to create vertex buffer!");
+
+            VkMemoryRequirements memRequirements;
+            vkGetBufferMemoryRequirements(this->device, this->vertexBuffer, &memRequirements);
+
+            VkMemoryAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocInfo.allocationSize = memRequirements.size;
+            allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+            if (vkAllocateMemory(this->device, &allocInfo, nullptr, &this->vertexBufferMemory) != VK_SUCCESS)
+                throw std::runtime_error("failed to allocate memory to our vertex buffer");
+
+            vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+            void *data;
+            vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+            memcpy(data, vertices.data(), (size_t) bufferInfo.size);
+            vkUnmapMemory(device, vertexBufferMemory);
+        };
+
+        uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+            VkPhysicalDeviceMemoryProperties memProperties;
+            vkGetPhysicalDeviceMemoryProperties(this->physicalDevice, &memProperties);
+
+            for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+                if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+                    return i;
+                }
+            }
+
+            throw std::runtime_error("couldn't find suitable memory type");
+        };
+
         void createCommandBuffer() {
             this->commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
             VkCommandBufferAllocateInfo allocInfo {};
@@ -706,7 +791,10 @@ class DrawTriangle {
 
             vkCmdBeginRenderPass(buffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, this->graphicsPipeline);
-            vkCmdDraw(buffer, 3, 1, 0, 0);
+            VkBuffer vertexBuffers[] = {this->vertexBuffer};
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(buffer, 0, 1, vertexBuffers, offsets);
+            vkCmdDraw(buffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
             vkCmdEndRenderPass(buffer);
             if (vkEndCommandBuffer(buffer) != VK_SUCCESS)
                 throw std::runtime_error("failed to record command buffer!");
@@ -819,6 +907,10 @@ class DrawTriangle {
 
         void cleanup() {
             cleanupSwapChain();
+
+            vkDestroyBuffer(this->device, this->vertexBuffer, nullptr);
+            vkFreeMemory(device, vertexBufferMemory, nullptr);
+
             for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
                 vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
                 vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
@@ -861,6 +953,9 @@ class DrawTriangle {
 
         bool framebufferResized = false;
         uint32_t currentFrame = 0;
+
+        VkBuffer vertexBuffer;
+        VkDeviceMemory vertexBufferMemory;
 };
 
 #endif //RENDERER_DRAWTRIANGLE_HPP
