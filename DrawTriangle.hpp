@@ -65,6 +65,10 @@ const std::vector<Vertex> vertices {
         {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
 };
 
+const std::vector<uint16_t> indices = {
+        0, 1, 2, 2, 3, 0
+};
+
 class DrawTriangle {
     public:
         void run() {
@@ -116,6 +120,7 @@ class DrawTriangle {
                 this->createFramebuffers();
                 this->createCommandPool();
                 this->createVertexBuffer();
+                this->createIndexBuffer();
                 this->createCommandBuffer();
                 this->createSyncObjects();
             };
@@ -715,33 +720,100 @@ class DrawTriangle {
             std::cout << "command pool created!" << std::endl;
         };
 
-        void createVertexBuffer() {
-            VkBufferCreateInfo bufferInfo {};
+        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+            VkBufferCreateInfo bufferInfo{};
             bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferInfo.size = sizeof(vertices[0]) * vertices.size();
-            bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            bufferInfo.size = size;
+            bufferInfo.usage = usage;
             bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-            if (vkCreateBuffer(this->device, &bufferInfo, nullptr, &this->vertexBuffer) != VK_SUCCESS)
-                throw std::runtime_error("failed to create vertex buffer!");
+            if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create buffer!");
+            }
 
             VkMemoryRequirements memRequirements;
-            vkGetBufferMemoryRequirements(this->device, this->vertexBuffer, &memRequirements);
+            vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
 
             VkMemoryAllocateInfo allocInfo{};
             allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
             allocInfo.allocationSize = memRequirements.size;
-            allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
 
-            if (vkAllocateMemory(this->device, &allocInfo, nullptr, &this->vertexBufferMemory) != VK_SUCCESS)
-                throw std::runtime_error("failed to allocate memory to our vertex buffer");
+            if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+                throw std::runtime_error("failed to allocate buffer memory!");
+            }
 
-            vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+            vkBindBufferMemory(device, buffer, bufferMemory, 0);
+        };
 
-            void *data;
-            vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-            memcpy(data, vertices.data(), (size_t) bufferInfo.size);
-            vkUnmapMemory(device, vertexBufferMemory);
+        void createVertexBuffer() {
+            VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+            VkBuffer stagingBuffer;
+            VkDeviceMemory stagingBufferMemory;
+            this->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+            void* data;
+            vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+            memcpy(data, vertices.data(), (size_t) bufferSize);
+            vkUnmapMemory(device, stagingBufferMemory);
+
+            this->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, this->vertexBuffer, this->vertexBufferMemory);
+            this->copyBuffer(stagingBuffer, this->vertexBuffer, bufferSize);
+
+            vkDestroyBuffer(device, stagingBuffer, nullptr);
+            vkFreeMemory(device, stagingBufferMemory, nullptr);
+        };
+
+        void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+            VkCommandBufferAllocateInfo allocInfo {};
+            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocInfo.commandBufferCount = 1;
+            allocInfo.commandPool = this->commandPool;
+
+            VkCommandBuffer commandBuffer;
+            vkAllocateCommandBuffers(this->device, &allocInfo, &commandBuffer);
+
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+            vkBeginCommandBuffer(commandBuffer, &beginInfo);
+            VkBufferCopy copyRegion{};
+            copyRegion.srcOffset = 0;
+            copyRegion.dstOffset = 0;
+            copyRegion.size = size;
+            vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+            vkEndCommandBuffer(commandBuffer);
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffer;
+
+            vkQueueSubmit(this->graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+            vkQueueWaitIdle(this->graphicsQueue);
+            vkFreeCommandBuffers(device, this->commandPool, 1, &commandBuffer);
+        };
+
+        void createIndexBuffer() {
+            VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+            VkBuffer stagingBuffer;
+            VkDeviceMemory stagingBufferMemory;
+            createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+            void* data;
+            vkMapMemory(this->device, stagingBufferMemory, 0, bufferSize, 0, &data);
+            memcpy(data, indices.data(), (size_t) bufferSize);
+            vkUnmapMemory(this->device, stagingBufferMemory);
+
+            createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
+
+            copyBuffer(stagingBuffer, this->indexBuffer, bufferSize);
+
+            vkDestroyBuffer(this->device, stagingBuffer, nullptr);
+            vkFreeMemory(this->device, stagingBufferMemory, nullptr);
         };
 
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -794,7 +866,9 @@ class DrawTriangle {
             VkBuffer vertexBuffers[] = {this->vertexBuffer};
             VkDeviceSize offsets[] = { 0 };
             vkCmdBindVertexBuffers(buffer, 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(buffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
             vkCmdDraw(buffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+            vkCmdDrawIndexed(buffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0, 0);
             vkCmdEndRenderPass(buffer);
             if (vkEndCommandBuffer(buffer) != VK_SUCCESS)
                 throw std::runtime_error("failed to record command buffer!");
@@ -909,7 +983,9 @@ class DrawTriangle {
             cleanupSwapChain();
 
             vkDestroyBuffer(this->device, this->vertexBuffer, nullptr);
-            vkFreeMemory(device, vertexBufferMemory, nullptr);
+            vkFreeMemory(this->device, this->vertexBufferMemory, nullptr);
+            vkDestroyBuffer(this->device, this->indexBuffer, nullptr);
+            vkFreeMemory(this->device, this->indexBufferMemory, nullptr);
 
             for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
                 vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
@@ -956,6 +1032,8 @@ class DrawTriangle {
 
         VkBuffer vertexBuffer;
         VkDeviceMemory vertexBufferMemory;
+        VkBuffer indexBuffer;
+        VkDeviceMemory indexBufferMemory;
 };
 
 #endif //RENDERER_DRAWTRIANGLE_HPP
