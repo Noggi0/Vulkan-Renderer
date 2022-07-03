@@ -129,6 +129,8 @@ class DrawTriangle {
                 this->createVertexBuffer();
                 this->createIndexBuffer();
                 this->createUniformBuffers();
+                this->createDescriptorPool();
+                this->createDescriptorSets();
                 this->createCommandBuffer();
                 this->createSyncObjects();
             };
@@ -862,7 +864,26 @@ class DrawTriangle {
 
             for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
                 createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, this->uniformBuffers[i], this->uniformBuffersMemory[i]);
-        }
+        };
+
+        void createDescriptorPool() {
+            VkDescriptorPoolSize poolSize {};
+            poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+            VkDescriptorPoolCreateInfo poolInfo {};
+            poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            poolInfo.poolSizeCount = 1;
+            poolInfo.pPoolSizes = &poolSize;
+            poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+            if (vkCreateDescriptorPool(this->device, &poolInfo, nullptr, &this->descriptorPool) != VK_SUCCESS)
+                throw std::runtime_error("failed to create descriptor pool!");
+        };
+
+        void createDescriptorSets() {
+
+        };
 
         void createCommandBuffer() {
             this->commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1098,6 +1119,8 @@ class DrawTriangle {
         VkDeviceMemory indexBufferMemory;
         std::vector<VkBuffer> uniformBuffers;
         std::vector<VkDeviceMemory> uniformBuffersMemory;
+
+        VkDescriptorPool descriptorPool;
 };
 
 #endif //RENDERER_DRAWTRIANGLE_HPP
