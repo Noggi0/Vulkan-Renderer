@@ -70,9 +70,9 @@ const std::vector<uint16_t> indices = {
 };
 
 struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
 };
 
 class DrawTriangle {
@@ -603,7 +603,7 @@ class DrawTriangle {
             rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
             rasterizer.lineWidth = 1.0f;
             rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-            rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+            rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
             rasterizer.depthBiasEnable = VK_FALSE;
             rasterizer.depthBiasConstantFactor = 0.0f; // Optional
             rasterizer.depthBiasClamp = 0.0f; // Optional
@@ -882,7 +882,36 @@ class DrawTriangle {
         };
 
         void createDescriptorSets() {
+            std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+            VkDescriptorSetAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocInfo.descriptorPool = descriptorPool;
+            allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+            allocInfo.pSetLayouts = layouts.data();
 
+            descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+            if (vkAllocateDescriptorSets(this->device, &allocInfo, this->descriptorSets.data()) != VK_SUCCESS)
+                throw std::runtime_error("failed to allocate descriptor sets!");
+
+            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+                VkDescriptorBufferInfo bufferInfo {};
+                bufferInfo.buffer = uniformBuffers[i];
+                bufferInfo.offset = 0;
+                bufferInfo.range = sizeof(UniformBufferObject);
+
+                VkWriteDescriptorSet descriptorWrite{};
+                descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                descriptorWrite.dstSet = descriptorSets[i];
+                descriptorWrite.dstBinding = 0;
+                descriptorWrite.dstArrayElement = 0;
+                descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                descriptorWrite.descriptorCount = 1;
+                descriptorWrite.pBufferInfo = &bufferInfo;
+                descriptorWrite.pImageInfo = nullptr; // Optional
+                descriptorWrite.pTexelBufferView = nullptr; // Optional
+
+                vkUpdateDescriptorSets(this->device, 1, &descriptorWrite, 0, nullptr);
+            }
         };
 
         void createCommandBuffer() {
@@ -923,6 +952,7 @@ class DrawTriangle {
             VkDeviceSize offsets[] = { 0 };
             vkCmdBindVertexBuffers(buffer, 0, 1, vertexBuffers, offsets);
             vkCmdBindIndexBuffer(buffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, this->pipelineLayout, 0, 1, &this->descriptorSets[currentFrame], 0, nullptr);
             vkCmdDraw(buffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
             vkCmdDrawIndexed(buffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0, 0);
             vkCmdEndRenderPass(buffer);
@@ -942,11 +972,11 @@ class DrawTriangle {
             } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
                 throw std::runtime_error("failed to acquire swap chain image!");
 
+            updateUniformBuffer(currentFrame);
+
             vkResetFences(device, 1, &inFlightFences[this->currentFrame]);
             vkResetCommandBuffer(this->commandBuffers[this->currentFrame], 0);
             this->recordCommandBuffer(this->commandBuffers[this->currentFrame], imageIndex);
-
-            updateUniformBuffer(currentFrame);
 
             VkSubmitInfo submitInfo{};
             submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1063,6 +1093,7 @@ class DrawTriangle {
                 vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
             }
 
+            vkDestroyDescriptorPool(this->device, this->descriptorPool, nullptr);
             vkDestroyDescriptorSetLayout(this->device, this->descriptorSetLayout, nullptr);
             vkDestroyBuffer(this->device, this->vertexBuffer, nullptr);
             vkFreeMemory(this->device, this->vertexBufferMemory, nullptr);
@@ -1121,6 +1152,7 @@ class DrawTriangle {
         std::vector<VkDeviceMemory> uniformBuffersMemory;
 
         VkDescriptorPool descriptorPool;
+        std::vector<VkDescriptorSet> descriptorSets;
 };
 
 #endif //RENDERER_DRAWTRIANGLE_HPP
